@@ -1,9 +1,9 @@
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from datetime import datetime, timedelta
-import yaml
-from jinja2 import Template
+from path.to.templated_dag import main as generate_templated_dag  # Import the main function from templated-dag.py
 
+# Default arguments for the DAG
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -14,48 +14,24 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-# Define the function to load config and generate the templated DAG
-def load_config(file_path):
-    with open(file_path, 'r') as file:
-        config = yaml.safe_load(file)
-    return config
-
-def render_template(config, template_path, output_path):
-    with open(template_path, 'r') as file:
-        template_content = file.read()
-    
-    template = Template(template_content)
-    rendered_content = template.render(config)
-    
-    # Write the rendered content to a new Python file (DAG)
-    with open(output_path, 'w') as output_file:
-        output_file.write(rendered_content)
-
-# Define the function to be executed in the PythonOperator
-def generate_templated_dag(**kwargs):
-    # Load configuration and render the template
-    config = load_config('/path/to/your/config.yaml')
-    render_template(config, '/path/to/your/template.jinja', '/path/to/output/rendered_dag.py')
-
-# Define the master DAG
+# Define the DAG
 with DAG(
-    dag_id='master_templated_dag',
+    dag_id='master_template_dag',
     default_args=default_args,
-    schedule_interval=None,
+    schedule_interval=None,  # Run manually, or change as needed
     catchup=False
 ) as dag:
 
-    # Task 1: Generate the templated DAG by rendering the Jinja template with the config
+    # Task 1: Call the templated-dag.py script to generate and upload the rendered DAG to GCS
     generate_dag_task = PythonOperator(
         task_id='generate_templated_dag',
-        python_callable=generate_templated_dag,
-        provide_context=True,
+        python_callable=generate_templated_dag,  # Calls the main function from templated-dag.py
         dag=dag,
     )
 
-    # Task 2: Print a success message
+    # Task 2: Print success message once the DAG is generated
     def print_success():
-        print("Templated DAG successfully generated and ready for execution.")
+        print("Templated DAG successfully generated and uploaded to GCS!")
 
     success_task = PythonOperator(
         task_id='print_success',
@@ -63,5 +39,5 @@ with DAG(
         dag=dag,
     )
 
-    # Define task dependencies
+    # Define the task dependencies
     generate_dag_task >> success_task
