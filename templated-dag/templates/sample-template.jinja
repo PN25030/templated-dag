@@ -1,0 +1,68 @@
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator
+from google.cloud import bigquery, storage
+import csv
+from datetime import datetime
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2023, 1, 1),
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+# {{ Dataset }}, {{ Table_name }}, and {{ Target_gcs_loc }} are placeholders from config.yaml
+def select_data_from_table(ds, **kwargs):
+    dataset = '{{ Dataset }}'
+    table = '{{ Table_name }}'
+    gcs_location = '{{ Target_gcs_loc }}'
+    
+    # Construct the SQL query
+    sql_query = f"SELECT * FROM `{dataset}.{table}` LIMIT 100"
+    print(f"Executing query: {sql_query}")
+
+    # Initialize BigQuery client and execute the query
+    client = bigquery.Client()
+    query_job = client.query(sql_query)
+    results = query_job.result()  # Wait for the query to finish
+
+    # Prepare CSV file
+    csv_filename = '/tmp/query_results.csv'
+    with open(csv_filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        
+        # Write headers (column names)
+        headers = [field.name for field in results.schema]
+        writer.writerow(headers)
+
+        # Write rows (query result rows)
+        for row in results:
+            writer.writerow([row[field] for field in headers])
+    
+    print(f"Query results written to: {csv_filename}")
+
+    # Upload the CSV to GCS
+    upload_to_gcs(gcs_location, 'query_results.csv', csv_filename)
+
+def upload_to_gcs(bucket_name, destination_blob_name, source_file_name):
+    """Uploads a file to Google Cloud Storage."""
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+    
+    # Upload the file to GCS
+    blob.upload_from_filename(source_file_name)
+    print(f"File successfully uploaded to gs://{bucket_name}/{destination_blob_name}")
+
+with DAG('dynamic_dag', default_args=default_args, schedule_interval=None, catchup=False) as dag:
+    
+    run_query = PythonOperator(
+        task_id='run_select_query',
+        python_callable=select_data_from_table,
+        provide_context=True,
+    )
+
+run_query
