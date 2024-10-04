@@ -1,0 +1,50 @@
+from google.cloud import storage
+from google.api_core.exceptions import NotFound
+
+def validate_gcs_uri(gcs_uri: str) -> bool:
+    """
+    Validate if the given GCS URI exists.
+
+    Args:
+    gcs_uri (str): The GCS URI to validate, e.g., 'gs://bucket-name/path/to/object'.
+
+    Returns:
+    bool: True if the GCS bucket or object exists, False otherwise.
+    """
+    try:
+        # Extract bucket name and object path from the GCS URI
+        if not gcs_uri.startswith('gs://'):
+            print("Invalid GCS URI. It should start with 'gs://'.")
+            return False
+        
+        gcs_uri = gcs_uri[5:]
+        bucket_name, *object_path = gcs_uri.split('/', 1)
+        object_path = object_path[0] if object_path else None
+
+        # Initialize a storage client
+        client = storage.Client()
+
+        # Check if the bucket exists
+        bucket = client.get_bucket(bucket_name)
+
+        if object_path:
+            # Check if the object exists within the bucket
+            blob = bucket.blob(object_path)
+            if not blob.exists():
+                print(f"Object {object_path} does not exist in bucket {bucket_name}.")
+                return False
+
+        # If no object path is provided, just checking the bucket existence is enough
+        return True
+
+    except NotFound:
+        print(f"Bucket {bucket_name} does not exist.")
+        return False
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return False
+
+# Example usage
+gcs_uri = 'gs://your-bucket-name/path/to/object'
+is_valid = validate_gcs_uri(gcs_uri)
+print(f"GCS URI Valid: {is_valid}")
